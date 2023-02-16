@@ -1,0 +1,3 @@
+vosk
+ffmpeg-python
+wxpython
