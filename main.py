@@ -113,7 +113,7 @@ class MyFrame(wx.Frame):
 		event.Skip()
 
 	def onExit(self, event):  # wxGlade: MyFrame.<event_handler>
-		stt.q.put("fuck") # даём команду на остановку потока. и ждём, пока поток прочитает команду fuck!
+		stt.tx.put("fuck") # даём команду на остановку потока. и ждём, пока поток прочитает команду fuck!
 		self.Close()
 		event.Skip()
 
