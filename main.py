@@ -124,6 +124,11 @@ class MyFrame(wx.Frame):
 		# сначала запускаем поток, а потом диалог. таким образом транскрибация начнётся сразу.
 		selected_item_index = self.language_choice.GetSelection()
 		language = self.language_choice.GetString(selected_item_index)
+		if not os.path.exists(self.audio_path):
+			dlg = wx.MessageDialog(self,'вы не выбрали файл или его не существует!')
+			wx.OK
+			dlg.ShowModal()
+			return
 		if not stt.transcribe(self.audio_path, language):
 			dlg = wx.MessageDialog(self,'распознавание ещё идёт.')
 			wx.OK
