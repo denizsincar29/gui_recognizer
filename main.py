@@ -118,7 +118,7 @@ class MyFrame(wx.Frame):
 		event.Skip()
 
 	def tutorial(self, event):  # wxGlade: MyFrame.<event_handler>
-		os.system("start README.htm")
+		os.system("start help.htm")
 
 	def onTranscrybe(self, event):  # wxGlade: MyFrame.<event_handler>
 		# сначала запускаем поток, а потом диалог. таким образом транскрибация начнётся сразу.
