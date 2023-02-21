@@ -16,12 +16,14 @@ rx=Queue()
 stdq=Queue()
 
 thr=None
+process=None
 
 # создаём функцию для получения stdout.
 def enqueue_output(out, queue):
-	for line in iter(out.readline, b''):
-		queue.put(line)
-	out.close()
+	try:
+		for line in iter(out.readline, b''):
+			queue.put(line.decode("UTF-8"))
+	except Exception as e: print("excepted ", e)
 
 #создаём функцию, для конвертирования любого файла в mono.wav 16 pcm
 def audio2wav(path):
@@ -38,6 +40,7 @@ def audio2wav(path):
 
 # функция для транскрибации файла, которая должна вызываться потоком.
 def thread_transcribe(path, language, output):
+	global process
 	# удаляем моно.вав если он есть, иначе выкинет исключение.
 	try: os.remove("output.wav")
 	except: pass
@@ -58,7 +61,6 @@ def thread_transcribe(path, language, output):
 		stdin=subprocess.PIPE,
 		stderr=subprocess.STDOUT)
 	progress=[0, 0, ""]
-	log=''
 	ln=b''
 
 	# запускаем поток читалки stdout иначе повесит к хренам.
@@ -66,31 +68,33 @@ def thread_transcribe(path, language, output):
 	th.start()
 
 	while True:
-		if not tx.empty() and tx.get=="fuck":
+		if process==None: return
+		if not tx.empty() and tx.get()=="fuck":
 			process.kill()
+			process=None
 			return
 		poll=process.poll()
 		if poll is not None:
 			outs, errs = process.communicate()
 			rx.put([-4, poll])
-			with open("error.log","ab") as f: f.write(log)
+			with open("error.log","a") as f: f.write(outs+errs)
+			process=None
 			return
 		if stdq.empty(): continue
 		line=stdq.get_nowait()
-		log+=line+"\n"
-		print(line)
-		line1=line.decode('utf-8').rstrip()
+		line1=line.rstrip()
 		print(line1)
 		if "whisper_init" in line1: progress[2]="loading models..."
+		progress[2]=line1
+
 		if "main: processing" in line1:
 			y=line1.split(" ")
-			progress=[-2, float(y[y.index("sec),")-1]), "transcribing..."]
+			progress=[-2, round(float(y[y.index("sec),")-1])), "transcribing..."]
 		if "saving" in line1: progress=[progress[1], progress[1], "finished!"]
-		if "total time" in line1: progress[2]=line1
 		if "-->" in line1:
 			stamps=line1.split(" --> ")[1].split("]")[0].split(":")
 			if len(stamps)!=3:print("stamps! ", stamps)
-			progress[0]=int(stamps[0])*3600 + int(stamps[1])*60 + float(stamps[2])
+			progress[0]=int(stamps[0])*3600 + int(stamps[1])*60 + round(float(stamps[2]))
 		rx.put(progress)
 
 

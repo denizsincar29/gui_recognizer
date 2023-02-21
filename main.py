@@ -62,6 +62,8 @@ class MyFrame(wx.Frame):
 		self.Bind(wx.EVT_MENU, self.onAbout, item)
 		item = wxglade_tmp_menu.Append(wx.ID_ANY, u"выход\tCtrl+q", "")
 		self.Bind(wx.EVT_MENU, self.onExit, item)
+		self.Bind(wx.EVT_CLOSE, self.onExit, item)
+
 		item = wxglade_tmp_menu.Append(wx.ID_ANY, u"Справка\tF1", "")
 		self.Bind(wx.EVT_MENU, self.tutorial, item)
 		self.frame_menubar.Append(wxglade_tmp_menu, u"&Файл")
@@ -128,8 +130,12 @@ class MyFrame(wx.Frame):
 		event.Skip()
 
 	def onExit(self, event):  # wxGlade: MyFrame.<event_handler>
+		print("quitting")
 		stt.tx.put("fuck") # даём команду на остановку потока. и ждём, пока поток прочитает команду fuck!
 		self.Close()
+		if stt.process is not None: 
+			try:stt.process.kill()
+			except: print("hahaha")
 		event.Skip()
 
 	def tutorial(self, event):  # wxGlade: MyFrame.<event_handler>
