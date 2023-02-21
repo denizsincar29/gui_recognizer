@@ -13,8 +13,15 @@ model="ggml-small.bin"
 errorflag=False
 tx=Queue()
 rx=Queue()
+stdq=Queue()
 
 thr=None
+
+# создаём функцию для получения stdout.
+def enqueue_output(out, queue):
+	for line in iter(out.readline, b''):
+		queue.put(line)
+	out.close()
 
 #создаём функцию, для конвертирования любого файла в mono.wav 16 pcm
 def audio2wav(path):
@@ -22,7 +29,7 @@ def audio2wav(path):
 	#конвертируем любой файл в wav моно 16 pcm
 	ffmpeg.input(path).output('output.wav', ac=1, ar=16000, loglevel="error").run()
 	# os.system("ffmpeg.exe -hide_banner -loglevel error -i "+ path+ " -ac 1 -ar 16000"+" mono.wav")
-	errorflag=not os.path.exists("mono.wav")
+	errorflag=not os.path.exists("output.wav")
 	if not errorflag:
 		print('готово! из '+path+' в mono.wav')
 		return
@@ -30,7 +37,7 @@ def audio2wav(path):
 	print("ошиба!")
 
 # функция для транскрибации файла, которая должна вызываться потоком.
-def thread_transcribe(path, language):
+def thread_transcribe(path, language, output):
 	# удаляем моно.вав если он есть, иначе выкинет исключение.
 	try: os.remove("output.wav")
 	except: pass
@@ -38,48 +45,46 @@ def thread_transcribe(path, language):
 	if errorflag:return
 	# передаём всю задачу транскрибации висперу.
 	startupinfo = subprocess.STARTUPINFO()
-	startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+	#startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
 	#here we construct the command line for whisperCPP    
-	cmd = f"main.exe -f output.wav -m {model} -l {language} --otxt"
-
+	cmd = f'whisper/main.exe -f "..\\output.wav" -m "{model}" -l {language} -pp -o{output}'
+	print(cmd)
 	#here we call the program with extra parameters to capture whisperCPP output
 	process=subprocess.Popen(cmd,
+		cwd="whisper/",
 		startupinfo=startupinfo,
 		stdout=subprocess.PIPE,
 		stdin=subprocess.PIPE,
 		stderr=subprocess.STDOUT)
 	progress=[0, 0, ""]
-	#here we print whisperCPP output to the Gooey window
-	log=b''
+	log=''
 	ln=b''
+
+	# запускаем поток читалки stdout иначе повесит к хренам.
+	th = Thread(target=enqueue_output, args=(process.stdout, stdq), daemon=True)
+	th.start()
+
 	while True:
 		if not tx.empty() and tx.get=="fuck":
-			proc.kill()
+			process.kill()
 			return
-		if process.poll() is None:
-			outs, errs = proc.communicate()
-			rx.put([-4, -4])
-			with open("error.log","rb") as f: f.write(log)
+		poll=process.poll()
+		if poll is not None:
+			outs, errs = process.communicate()
+			rx.put([-4, poll])
+			with open("error.log","ab") as f: f.write(log)
 			return
-
-		try:
-			outs, errs = proc.communicate(timeout=15)
-		except TimeoutExpired:
-			proc.kill()
-			outs, errs = proc.communicate()
-			rx.put([-4, -4])
-			with open("error.log","rb") as f: f.write(log)
-			return
-		log+=ln
-		ln+=outs
-		if not b'\n' in ln: continue
-		line1=ln.decode('utf-8').rstrip()
+		if stdq.empty(): continue
+		line=stdq.get_nowait()
+		log+=line+"\n"
+		print(line)
+		line1=line.decode('utf-8').rstrip()
 		print(line1)
 		if "whisper_init" in line1: progress[2]="loading models..."
 		if "main: processing" in line1:
 			y=line1.split(" ")
-			progress=[-2, float(y[y.index("sec),")-1]), "transcribing...")
+			progress=[-2, float(y[y.index("sec),")-1]), "transcribing..."]
 		if "saving" in line1: progress=[progress[1], progress[1], "finished!"]
 		if "total time" in line1: progress[2]=line1
 		if "-->" in line1:
@@ -95,11 +100,10 @@ def thread_transcribe(path, language):
 
 # а эта функция создаёт поток, который выполняется в фоне. его и надо вызывать из гуя.
 # не инициализируй сразу модель. прямо во время транскрибации инициализируем. иначе нужно будет создавать ещё одну функцию с потоком, 1000000 проверок и кучу говнокода.
-def transcribe(path, language):
+def transcribe(path, language, output):
 	global thr # даём питону знать, что мы будем использовать глобальную переменную испод функции. иначе питон скажет: error! govnocode!
 	# проверяем. если транскрибирует, то возвращаем фолс и всё!
 	if thr is not None and thr.is_alive():return False
-	print("language: ", language, "path: ", path)
-	thr=Thread(target=thread_transcribe, args=(path, language))
+	thr=Thread(target=thread_transcribe, args=(path, language, output))
 	thr.start() # запускаем поток.
 	return True

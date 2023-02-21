@@ -27,15 +27,15 @@ def loop():
 		state=stt.rx.get()
 		if state==[-1, -1]:
 			dlgs.progressclose()
-			dlg = wx.MessageDialog(app.frame, 'распознавание завершено! Результат сохранён рядом с исполняемым файлом программы в файл "text.txt"')
+			dlg = wx.MessageDialog(app.frame, 'распознавание завершено! Результат сохранён рядом с исполняемым файлом программы в файл "output.wav.txt"')
 			wx.OK	
 			dlg.ShowModal()
-			os.system("start text.txt")
+			os.system("start output.wav.txt")
 			return
 		elif state[0]==-2:
 			dlgs.progressstart(app.frame, "идёт транскрибация", state[2], max=state[1])
 		elif state[0]==-4:
-			dlg = wx.MessageDialog(app.frame, 'ошибка! программа для распознавания речи неожиданно завершилось. stdout log сохранён в файл error.log')
+			dlg = wx.MessageDialog(app.frame, f'ошибка! программа для распознавания речи неожиданно завершилось. код ошибки: {state[1]}. stdout log сохранён в файл error.log')
 			wx.OK	
 			dlg.ShowModal()
 
@@ -138,13 +138,16 @@ class MyFrame(wx.Frame):
 	def onTranscrybe(self, event):  # wxGlade: MyFrame.<event_handler>
 		# сначала запускаем поток, а потом диалог. таким образом транскрибация начнётся сразу.
 		selected_item_index = self.language_choice.GetSelection()
+		selected_format_index = self.format_choice.GetSelection()
+
 		language = self.language_choice.GetString(selected_item_index)
+		format = self.format_choice.GetString(selected_format_index)
 		if not os.path.exists(self.audio_path):
 			dlg = wx.MessageDialog(self,'вы не выбрали файл или его не существует!')
 			wx.OK
 			dlg.ShowModal()
 			return
-		if not stt.transcribe(self.audio_path, language):
+		if not stt.transcribe(self.audio_path, language, format):
 			dlg = wx.MessageDialog(self,'распознавание ещё идёт.')
 			wx.OK
 			dlg.ShowModal()
