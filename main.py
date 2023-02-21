@@ -33,9 +33,14 @@ def loop():
 			os.system("start text.txt")
 			return
 		elif state[0]==-2:
-			dlgs.progressstart(app.frame, "идёт транскрибация", "пожалуйста подождите", max=state[1])
+			dlgs.progressstart(app.frame, "идёт транскрибация", state[2], max=state[1])
+		elif state[0]==-4:
+			dlg = wx.MessageDialog(app.frame, 'ошибка! программа для распознавания речи неожиданно завершилось. stdout log сохранён в файл error.log')
+			wx.OK	
+			dlg.ShowModal()
+
 		else:
-			r=dlgs.progressset(state[0])
+			r=dlgs.progressset(state[0], state[2])
 			if r is not None and not r[0]:
 				stt.tx.put("fuck")
 				print("canceled")
@@ -67,18 +72,28 @@ class MyFrame(wx.Frame):
 
 		sizer_1 = wx.BoxSizer(wx.VERTICAL)
 
-		label_1 = wx.StaticText(self.panel_1, wx.ID_ANY, u"выберете язык", style=wx.ALIGN_CENTER_HORIZONTAL)
+		label_1 = wx.StaticText(self.panel_1, wx.ID_ANY, u"выберите язык", style=wx.ALIGN_CENTER_HORIZONTAL)
 		sizer_1.Add(label_1, 0, 0, 0)
 
-		self.choices_label = wx.StaticText(self.panel_1, label='выбирите язык')
+		self.choices_label = wx.StaticText(self.panel_1, label='выберите язык')
 		self.language_choice = wx.Choice(self.panel_1, choices=stt.models)
 		self.language_choice.SetSelection(0)
 		self.language_choice.SetFocus()
+
+		label_2 = wx.StaticText(self.panel_1, wx.ID_ANY, u"выберите формат выходного файла", style=wx.ALIGN_CENTER_HORIZONTAL)
+		sizer_1.Add(label_2, 0, 0, 0)
+
+		self.format_label = wx.StaticText(self.panel_1, label='выберите формат выходного файла')
+		self.format_choice = wx.Choice(self.panel_1, choices=["txt", "vtt", "srt"])
+		self.format_choice.SetSelection(0)
+
 		self.select_btn = wx.Button(self.panel_1, label='Скачать языки для распознавания')
 		self.Bind(wx.EVT_BUTTON, self.on_select_btn, self.select_btn)
 
 
 		sizer_1.Add(self.language_choice, 0, 0, 0)
+		sizer_1.Add(self.format_choice, 0, 0, 0)
+
 
 		self.button_1 = wx.Button(self.panel_1, wx.ID_ANY, u"выбрать файл для транскрибирования")
 		sizer_1.Add(self.button_1, 0, 0, 0)

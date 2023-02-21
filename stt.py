@@ -1,16 +1,15 @@
 # отдельный файл с логикой программы
 import os
-import wave
 import ffmpeg
+import subprocess
 import json
-from pprint import pprint #подключили Pprint для красоты выдачи текста
-from vosk import Model, KaldiRecognizer
 from queue import Queue
 from threading import Thread
 # последние два модуля- это посылатель команд и потоки.
 # чтобы программа не висла, транскрибацию выполняем в отдельном потоке, иначе обработчик событий не будет вызываться и винда подумает, что не отвечает.
+models=['auto', 'ru', 'en', 'tr', 'de', 'es',  'fr', 'ja', 'pt', 'pl', 'ca', 'nl','ar','sv','it','id','zh','ko','hi','fi','vi','iw','uk','el','ms','cs','ro','da','hu','ta','no','th','ur','hr','bg','lt','la','mi','ml','cy','sk','te','fa','lv','bn','sr','az','sl','kn','et','mk','br','eu','is','hy','ne','mn','bs','kk','sq','sw','gl','mr','pa','si','km','sn','yo','so','af','oc','ka','be','tg','sd','gu','am','yi','lo','uz','fo','ht','ps','tk','nn','mt','sa','lb','my','bo','tl','mg','as','tt','haw','ln','ha','ba','jw','su']
+model="ggml-small.bin"
 
-models=os.listdir("models") # список моделей
 errorflag=False
 tx=Queue()
 rx=Queue()
@@ -21,7 +20,7 @@ thr=None
 def audio2wav(path):
 	global errorflag
 	#конвертируем любой файл в wav моно 16 pcm
-	ffmpeg.input(path).output('mono.wav', ac=1, ar=16000, loglevel="error").run()
+	ffmpeg.input(path).output('output.wav', ac=1, ar=16000, loglevel="error").run()
 	# os.system("ffmpeg.exe -hide_banner -loglevel error -i "+ path+ " -ac 1 -ar 16000"+" mono.wav")
 	errorflag=not os.path.exists("mono.wav")
 	if not errorflag:
@@ -33,64 +32,64 @@ def audio2wav(path):
 # функция для транскрибации файла, которая должна вызываться потоком.
 def thread_transcribe(path, language):
 	# удаляем моно.вав если он есть, иначе выкинет исключение.
-	try: os.remove("mono.wav")
+	try: os.remove("output.wav")
 	except: pass
-	# мы ускорим программу, добавив ещё один поток, который конвертирует аудио в вав. будет происходить, пока инициализируется модель языка. а чтобы не началась транскрибация раньше, мы подождём завершения потока.
-	thr2=Thread(target=audio2wav, args=(path, ))
-	thr2.start()
-	# ok! мы создали поток. пока он выполняется, инициализируем модель языка и распознаём.
-	model = Model(os.path.join("models", language)) # путь до модели распознавания
-	# ждём, пока не завершится поток, который конвертирует аудио. иначе он скажет, что такого файла нет.
-	thr2.join() # если поток завершился раньше, это ничего не делает.
+	audio2wav(path)
 	if errorflag:return
-	#открываем и читаем моно файл
-	rec_file = wave.open('mono.wav', 'rb')
-	rec = KaldiRecognizer(model, rec_file.getframerate())
-	rec.SetWords(True)
+	# передаём всю задачу транскрибации висперу.
+	startupinfo = subprocess.STARTUPINFO()
+	startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
-	total=rec_file.getnframes()
-	step=4000
-	data_length=0
-	rx.put([-2, total])
+	#here we construct the command line for whisperCPP    
+	cmd = f"main.exe -f output.wav -m {model} -l {language} --otxt"
+
+	#here we call the program with extra parameters to capture whisperCPP output
+	process=subprocess.Popen(cmd,
+		startupinfo=startupinfo,
+		stdout=subprocess.PIPE,
+		stdin=subprocess.PIPE,
+		stderr=subprocess.STDOUT)
+	progress=[0, 0, ""]
+	#here we print whisperCPP output to the Gooey window
+	log=b''
+	ln=b''
 	while True:
-		if not tx.empty() and tx.get()=="fuck": return
-		data = rec_file.readframes(step)
-		data_length+=step
-		if len(data) == 0:
-			data_length=total
-			break
-		if data_length>total:
-			print("progress ", data_length, " but max is", total)
-			data_length=total
-		if rec.AcceptWaveform(data):
-			pass #print(rec.Result())
-		else:
-			pass # print('распознавание...')
-		rx.put([data_length, total]) # передаём главному потоку состояние распознавания
-	rx.put([-1, -1])
-	#вводим строковую выдачу для результатов
-	results = [] # это всё потом будет нужно
-	textResults = []#это тоже
-	# конвертируем распознанные результаты в словарик
-	resultDict = json.loads(rec.Result())
-	# сохраняем в список
-	results.append(resultDict)
-					# сохраняем значение text в список
-	textResults.append(resultDict.get("text" , ''))
+		if not tx.empty() and tx.get=="fuck":
+			proc.kill()
+			return
+		if process.poll() is None:
+			outs, errs = proc.communicate()
+			rx.put([-4, -4])
+			with open("error.log","rb") as f: f.write(log)
+			return
 
-	#			# финальные результаты
-	resultDict = json.loads(rec.Result())
-	results.append(resultDict)
-	textResults.append(resultDict.get("text", ''))
+		try:
+			outs, errs = proc.communicate(timeout=15)
+		except TimeoutExpired:
+			proc.kill()
+			outs, errs = proc.communicate()
+			rx.put([-4, -4])
+			with open("error.log","rb") as f: f.write(log)
+			return
+		log+=ln
+		ln+=outs
+		if not b'\n' in ln: continue
+		line1=ln.decode('utf-8').rstrip()
+		print(line1)
+		if "whisper_init" in line1: progress[2]="loading models..."
+		if "main: processing" in line1:
+			y=line1.split(" ")
+			progress=[-2, float(y[y.index("sec),")-1]), "transcribing...")
+		if "saving" in line1: progress=[progress[1], progress[1], "finished!"]
+		if "total time" in line1: progress[2]=line1
+		if "-->" in line1:
+			stamps=line1.split(" --> ")[1].split("]")[0].split(":")
+			if len(stamps)!=3:print("stamps! ", stamps)
+			progress[0]=int(stamps[0])*3600 + int(stamps[1])*60 + float(stamps[2])
+		rx.put(progress)
 
-	text="\n".join(textResults)
-	#pprint(text) #вывели результат на экран
-	with open('text.txt', 'a', encoding='utf-8') as f2: #открыли файл для записи распознанного текста
-		f2.write(text) #записали в файл txt
 
-
-	rec_file.close()
-	try: os.remove("mono.wav")
+	try: os.remove("output.wav")
 	except: pass
 
 
